@@ -285,8 +285,8 @@ static void scan_draw_waiting(SkylandexApp* app) {
         AlignCenter,
         AlignTop,
         FontSecondary,
-        "Hold Skylander on\n"
-        "the Flipper NFC coil");
+        "Hold Skylander near\n"
+        "the Flipper's NFC coil to scan");
     skylandex_widget_add_actions(app->scan_widget, "Back", NULL, scan_button_callback, app);
 }
 
