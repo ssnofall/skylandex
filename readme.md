@@ -13,6 +13,7 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | ✔ | Save NFC dump to SD card per figure |
 | ✔ | LED color themed per element |
 | ✔ | Emulate a saved figure via NFC |
+| ❌ | Database lookup support for ALL Skylander figures |
 | ❌ | On-device key gen: derives all 16 keys from UID |
 | ❌ | Full 16-sector read: use derived keys to dump everything |
 | ❌ | HALT state machine: go silent when portal says stop |
