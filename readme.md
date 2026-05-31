@@ -8,7 +8,7 @@ A Flipper Zero app for scanning, identifying, and emulating Skylander figures, w
 | ✔ | Collection index saved to SD card |
 | ✔ | Detail view: name, element, UID, scan date |
 | ✔ | Save NFC dump to SD card per figure |
-| ✔ | LED and haptic feedback themed per element |
+| ✔ | LED color themed per element |
 | ✔ | Emulate a saved figure via NFC |
 | ✘ | On-device key gen: derives all 16 keys from UID |
 | ✘ | Full 16-sector read: use derived keys to dump everything |
@@ -24,13 +24,6 @@ Fully functioning emulation depends on:
 - HALT support
 
 ## Installation
-
-### From the Momentum App Store
-The easiest way to install Skylandex is through the Momentum app store, available directly on your Flipper.
-
-1. On your Flipper, navigate to **Momentum Settings → Apps**
-2. Search for **Skylandex** and select it
-3. Press **Install**
 
 ### Manual install (pre-built)
 1. Download the latest `.fap` from the [Releases](../../releases) page
@@ -77,7 +70,7 @@ The database can be expanded in `character_db.c`. Use the [Skylander-IDs repo](h
 
 ### Prerequisites
 - [uFBT](https://github.com/flipperdevices/flipperzero-ufbt) — the micro Flipper Build Tool
-- A Flipper Zero running [Momentum firmware](https://github.com/Next-Flip/Momentum-Firmware) (other firmwares may work but are untested)
+- A Flipper Zero running [Momentum firmware](https://github.com/Next-Flip/Momentum-Firmware) (other firmwares may work but are currently untested)
 - A Skylander figure
 
 ### Setup
@@ -101,7 +94,7 @@ ufbt update --channel release --index-url https://up.momentum-fw.dev/firmware/di
 ufbt build
 ```
 
-The compiled `.fap` will be placed in `dist/`.
+The compiled `.fap` will be placed in `/dist`.
 
 ### Deploy to Flipper
 
