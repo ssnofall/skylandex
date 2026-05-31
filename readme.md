@@ -117,6 +117,6 @@ Pull requests are welcome. If you're adding Skylander entries to the character d
 - [Snofall](https://github.com/ssnofall)
 
 ## License
-[MIT](LICENSE)
+[GNU General Public License v3.0](LICENSE)
 
 > **Note:** This app is a personal hobby project and is not affiliated with or endorsed by Activision.
