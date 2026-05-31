@@ -1,4 +1,4 @@
-name: "FAP: Build for multiple SDK sources"
+name: "Skylandex: Build FAP"
 # This will build your app for dev and release channels on GitHub. 
 # It will also build your app every day to make sure it's up to date with the latest SDK changes.
 # See https://github.com/marketplace/actions/build-flipper-application-package-fap for more information
@@ -19,10 +19,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: dev channel
-            sdk-channel: dev
-          - name: release channel
+          - name: Momentum firmware
             sdk-channel: release
+            index-url: https://up.momentum-fw.dev/firmware/directory.json
           # You can add unofficial channels here. See ufbt action docs for more info.
     name: 'ufbt: Build for ${{ matrix.name }}'
     steps:
@@ -33,6 +32,7 @@ jobs:
         id: build-app
         with:
           sdk-channel: ${{ matrix.sdk-channel }}
+          ufbt-args: update --index-url ${{ matrix.index-url }}
       - name: Upload app artifacts
         uses: actions/upload-artifact@v4
         with:
