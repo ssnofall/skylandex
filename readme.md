@@ -7,16 +7,16 @@ A Flipper Zero app for scanning, identifying, and emulating Skylander figures, w
 ## Features
 | Status | Feature |
 |--------|---------|
-| ✓ | Scan and identify Skylander figure |
-| ✓ | Collection index saved to SD card |
-| ✓ | Detail view: name, element, UID, scan date |
-| ✓ | Save NFC dump to SD card per figure |
-| ✓ | LED color themed per element |
-| ✓ | Emulate a saved figure via NFC |
-| ✘ | On-device key gen: derives all 16 keys from UID |
-| ✘ | Full 16-sector read: use derived keys to dump everything |
-| ✘ | HALT state machine: go silent when portal says stop |
-| ✘ | Write back saves: so progress actually saves to the dump |
+| ✔ | Scan and identify Skylander figure |
+| ✔ | Collection index saved to SD card |
+| ✔ | Detail view: name, element, UID, scan date |
+| ✔ | Save NFC dump to SD card per figure |
+| ✔ | LED color themed per element |
+| ✔ | Emulate a saved figure via NFC |
+| × | On-device key gen: derives all 16 keys from UID |
+| × | Full 16-sector read: use derived keys to dump everything |
+| × | HALT state machine: go silent when portal says stop |
+| × | Write back saves: so progress actually saves to the dump |
 
 ### Emulation status
 Emulation is present but limited. The portal will detect an emulated figure, but without on-device key generation only sector 0 is readable, meaning the character loads with no save data. Portal HALT handling is also not yet implemented.
