@@ -65,6 +65,8 @@ The internal character lookup database currently covers the **32 core Skylanders
 
 The database can be expanded in `character_db.c`. Use the [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs) by [@Texthead1](https://github.com/Texthead1) to source IDs. Each entry needs the Skylander ID in hexadecimal, name, and element.
 
+> **Note on Databse:** Currently migrating the character database from a hardcoded array in 'character_db.c' to a file stored on the SD card, parsed at runtime. This will also add support for character variants via a second 'variant_id' field, allowing the app to distinguish between figures like base Spyro and Eon's Elite Spyro that share the same character ID.
+
 **Example:**
 ```c
 {0x0010, "Spyro", "Magic"}
