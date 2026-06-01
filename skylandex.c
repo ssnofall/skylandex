@@ -306,22 +306,26 @@ static void scan_draw_result(SkylandexApp* app) {
                 sizeof(body),
                 "%s\n"
                 "\n"
-                "ID 0x%04X\n"
-                "UID %s",
+                "ID:  0x%04X\n"
+                "VID: 0x%04X\n"
+                "UID: %s",
                 app->status_message,
                 app->last_scan.character_id,
+                app->last_scan.variant_id,
                 uid_text);
         } else {
             snprintf(
                 body,
                 sizeof(body),
-                "ID 0x%04X\n"
-                "UID %s",
+                "ID:  0x%04X\n"
+                "VID: 0x%04X\n"
+                "UID: %s",
                 app->last_scan.character_id,
+                app->last_scan.variant_id,
                 uid_text);
         }
         skylandex_widget_set_screen_with_element(
-            app->scan_widget, header, element, body, "Back", "Save", scan_button_callback, app);
+            app->scan_widget, header, element, body, NULL, "Save", scan_button_callback, app);
     } else if(app->skylander_read_attempted) {
         snprintf(
             body,
@@ -404,6 +408,7 @@ static bool scan_save_figure(SkylandexApp* app) {
     if(!collection_add(
            app->collection,
            app->last_scan.character_id,
+           app->last_scan.variant_id,
            save_name,
            element,
            app->last_scan.uid_hex,
@@ -433,7 +438,11 @@ bool scene_scan_on_event(void* context, SceneManagerEvent event) {
             skylander_reader_read_sector0(app->reader, &app->last_scan);
             app->has_character_match = false;
             if(app->last_scan.read_ok && app->last_scan.has_character_id) {
-                const SkylanderInfo* info = character_db_lookup(app->last_scan.character_id);
+                const SkylanderInfo* info = character_db_lookup_by_variant(
+                    app->last_scan.character_id, app->last_scan.variant_id);
+                if(info == NULL) {
+                    info = character_db_lookup(app->last_scan.character_id);
+                }
                 if(info != NULL) {
                     app->has_character_match = true;
                     strlcpy(app->matched_name, info->name, sizeof(app->matched_name));
@@ -567,11 +576,12 @@ static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
     snprintf(
         body,
         sizeof(body),
-        "ID 0x%04X\n"
-        "UID %s\n"
-        "\n"
+        "ID:  0x%04X\n"
+        "VID: 0x%04X\n"
+        "UID: %s\n"
         "Scanned %s\n",
         entry->character_id,
+        entry->variant_id,
         entry->uid_hex,
         entry->date_scanned);
 
@@ -580,7 +590,7 @@ static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
         header,
         entry->element,
         body,
-        "Back",
+        NULL,
         "Emulate",
         detail_button_callback,
         app);
@@ -871,11 +881,13 @@ static void skylandex_app_free(SkylandexApp* app) {
 
 int32_t skylandex_app(void* p) {
     UNUSED(p);
+    character_db_init();
     SkylandexApp* app = skylandex_app_alloc();
     if(app == NULL) return -1;
     collection_load(app->collection);
     scene_manager_next_scene(app->scene_manager, SceneMenu);
     view_dispatcher_run(app->view_dispatcher);
     skylandex_app_free(app);
+    character_db_free();
     return 0;
 }

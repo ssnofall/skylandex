@@ -4,11 +4,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define MAX_FIGURES 32      // Maximum number of Skylanders that can be stored in memory. // flipper heap is small; ~140 bytes per entry — keep this modest
-#define COLLECTION_FILE_VERSION 2
+#define MAX_FIGURES 32
+#define COLLECTION_FILE_VERSION 3
 
 typedef struct {
     uint16_t character_id;
+    uint16_t variant_id;
     char name[32];
     char element[16];
     char uid_hex[16];
@@ -27,6 +28,7 @@ void collection_free(Collection* collection);
 bool collection_add(
     Collection* collection,
     uint16_t character_id,
+    uint16_t variant_id,
     const char* name,
     const char* element,
     const char* uid_hex,

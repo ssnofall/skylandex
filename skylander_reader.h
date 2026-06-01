@@ -22,6 +22,7 @@ typedef struct {
     char block0_hex[48];
     char block1_hex[48];
     uint16_t character_id;
+    uint16_t variant_id;
     uint8_t element_id;
     bool has_character_id;
 } ScanResult;
