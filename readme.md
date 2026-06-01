@@ -2,7 +2,7 @@
 A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander figures, with an on-device collection index and per-figure NFC dumps saved to SD card.
 
 <img src="/images/1.png" alt="screenshot-1" width="400"/> <img src="/images/2.png" alt="screenshot-2" width="400"/>
-<img src="/images/3.png" alt="screenshot-3" width="400"/> <img src="/images/2.png" alt="screenshot-4" width="400"/>
+<img src="/images/3.png" alt="screenshot-3" width="400"/> <img src="/images/4.png" alt="screenshot-4" width="400"/>
 
 ## Features
 | Status | Feature |
