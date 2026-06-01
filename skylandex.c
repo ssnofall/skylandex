@@ -1,10 +1,12 @@
 #include <furi.h>
 #include <furi/core/timer.h>
 #include <gui/gui.h>
+#include <gui/view.h>
 #include <gui/view_dispatcher.h>
 #include <gui/scene_manager.h>
 #include <gui/modules/submenu.h>
 #include <gui/modules/widget.h>
+#include <storage/storage.h>
 
 #include "character_db.h"
 #include "collection.h"
@@ -33,6 +35,7 @@ typedef enum {
     ViewCollectionList,
     ViewDetail,
     ViewEmulate,
+    ViewDeleteConfirm,
 } ViewId;
 
 // events
@@ -44,6 +47,9 @@ typedef enum {
     AppEventEmulateToggle,
     AppEventEmulateStop,
     AppEventEmulateTick,
+    AppEventCollectionDelete,
+    AppEventDeleteConfirmYes,
+    AppEventDeleteConfirmNo,
 } AppEventType;
 
 // app state
@@ -76,6 +82,9 @@ typedef struct {
     uint8_t emulate_anim_frame;
     FuriTimer* emulate_timer;
     uint16_t selected_collection_index;
+    uint16_t collection_list_selection;
+    Widget* delete_confirm_widget;
+    bool long_press_active;
 } SkylandexApp;
 
 // forward scene handlers
@@ -502,6 +511,47 @@ static void collection_item_callback(void* context, uint32_t index) {
     view_dispatcher_send_custom_event(app->view_dispatcher, AppEventCollectionSelect);
 }
 
+// input callback for the collection submenu view — detects long press for deletion
+static SkylandexApp* g_app_for_input = NULL;
+
+static bool collection_list_input_callback(InputEvent* event, void* context) {
+    UNUSED(context);
+    SkylandexApp* app = g_app_for_input;
+    if(app == NULL) return false;
+
+    if(event->key == InputKeyOk) {
+        if(event->type == InputTypePress) {
+            app->selected_collection_index = (uint16_t)submenu_get_selected_item(app->collection_menu);
+            return true;
+        }
+        if(event->type == InputTypeLong) {
+            app->long_press_active = true;
+            view_dispatcher_send_custom_event(app->view_dispatcher, AppEventCollectionDelete);
+            return true;
+        }
+        if(event->type == InputTypeRelease) {
+            if(!app->long_press_active) {
+                app->selected_collection_index = (uint16_t)submenu_get_selected_item(app->collection_menu);
+                view_dispatcher_send_custom_event(app->view_dispatcher, AppEventCollectionSelect);
+            }
+            app->long_press_active = false;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void delete_confirm_callback(GuiButtonType type, InputType input_type, void* context) {
+    if(input_type != InputTypePress) return;
+    SkylandexApp* app = (SkylandexApp*)context;
+    if(type == GuiButtonTypeRight) {
+        view_dispatcher_send_custom_event(app->view_dispatcher, AppEventDeleteConfirmYes);
+    } else if(type == GuiButtonTypeLeft) {
+        view_dispatcher_send_custom_event(app->view_dispatcher, AppEventDeleteConfirmNo);
+    }
+}
+
 void scene_collection_on_enter(void* context) {
     SkylandexApp* app = (SkylandexApp*)context;
     collection_load(app->collection);
@@ -534,6 +584,11 @@ void scene_collection_on_enter(void* context) {
             app->collection->entries[i].element);
         submenu_add_item(app->collection_menu, label, i, collection_item_callback, app);
     }
+    app->collection_list_selection = 0;
+    app->long_press_active = false;
+    g_app_for_input = app;
+    view_set_input_callback(
+        submenu_get_view(app->collection_menu), collection_list_input_callback);
     view_dispatcher_switch_to_view(app->view_dispatcher, ViewCollectionList);
 }
 
@@ -542,6 +597,106 @@ bool scene_collection_on_event(void* context, SceneManagerEvent event) {
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == AppEventCollectionSelect) {
             scene_manager_next_scene(app->scene_manager, SceneDetail);
+            return true;
+        }
+        if(event.event == AppEventCollectionDelete) {
+            const CollectionEntry* entry =
+                collection_get_entry(app->collection, app->selected_collection_index);
+            if(entry != NULL) {
+                char confirm_text[64];
+                snprintf(confirm_text, sizeof(confirm_text), "Delete %s?", entry->name);
+
+                widget_reset(app->delete_confirm_widget);
+                widget_add_string_element(
+                    app->delete_confirm_widget,
+                    64,
+                    10,
+                    AlignCenter,
+                    AlignCenter,
+                    FontPrimary,
+                    "Are you sure?");
+                widget_add_string_multiline_element(
+                    app->delete_confirm_widget,
+                    64,
+                    28,
+                    AlignCenter,
+                    AlignCenter,
+                    FontSecondary,
+                    confirm_text);
+                widget_add_button_element(
+                    app->delete_confirm_widget,
+                    GuiButtonTypeLeft,
+                    "No",
+                    delete_confirm_callback,
+                    app);
+                widget_add_button_element(
+                    app->delete_confirm_widget,
+                    GuiButtonTypeRight,
+                    "Yes",
+                    delete_confirm_callback,
+                    app);
+
+                view_dispatcher_switch_to_view(app->view_dispatcher, ViewDeleteConfirm);
+            }
+            return true;
+        }
+        if(event.event == AppEventDeleteConfirmYes) {
+            const CollectionEntry* entry =
+                collection_get_entry(app->collection, app->selected_collection_index);
+            if(entry != NULL) {
+                Storage* storage = furi_record_open(RECORD_STORAGE);
+                storage_simply_remove(storage, entry->nfc_path);
+                furi_record_close(RECORD_STORAGE);
+
+                collection_remove(app->collection, app->selected_collection_index);
+                collection_save(app->collection);
+                collection_load(app->collection);
+            }
+
+            if(app->collection->count == 0) {
+                widget_reset(app->collection_empty_widget);
+                widget_add_string_element(
+                    app->collection_empty_widget,
+                    64,
+                    10,
+                    AlignCenter,
+                    AlignCenter,
+                    FontPrimary,
+                    "No Skylanders yet");
+                widget_add_string_element(
+                    app->collection_empty_widget,
+                    64,
+                    32,
+                    AlignCenter,
+                    AlignCenter,
+                    FontSecondary,
+                    "Scan a Skylander to start");
+                view_dispatcher_switch_to_view(app->view_dispatcher, ViewCollectionEmpty);
+            } else {
+                if(app->selected_collection_index >= app->collection->count) {
+                    app->selected_collection_index = app->collection->count - 1;
+                }
+                app->collection_list_selection = app->selected_collection_index;
+
+                submenu_reset(app->collection_menu);
+                submenu_set_header(app->collection_menu, "My Skylandex");
+                for(uint16_t i = 0; i < app->collection->count; i++) {
+                    char label[40];
+                    snprintf(
+                        label,
+                        sizeof(label),
+                        "%s - %s",
+                        app->collection->entries[i].name,
+                        app->collection->entries[i].element);
+                    submenu_add_item(
+                        app->collection_menu, label, i, collection_item_callback, app);
+                }
+                view_dispatcher_switch_to_view(app->view_dispatcher, ViewCollectionList);
+            }
+            return true;
+        }
+        if(event.event == AppEventDeleteConfirmNo) {
+            scene_collection_on_enter(app);
             return true;
         }
     }
@@ -556,6 +711,7 @@ void scene_collection_on_exit(void* context) {
     SkylandexApp* app = (SkylandexApp*)context;
     submenu_reset(app->collection_menu);
     widget_reset(app->collection_empty_widget);
+    widget_reset(app->delete_confirm_widget);
 }
 
 static void detail_button_callback(GuiButtonType type, InputType input_type, void* context) {
@@ -812,6 +968,7 @@ static SkylandexApp* skylandex_app_alloc() {
     app->collection_empty_widget = widget_alloc();
     app->detail_widget = widget_alloc();
     app->emulate_widget = widget_alloc();
+    app->delete_confirm_widget = widget_alloc();
 
     view_dispatcher_add_view(app->view_dispatcher, ViewMenu, submenu_get_view(app->menu));
     view_dispatcher_add_view(app->view_dispatcher, ViewScan, widget_get_view(app->scan_widget));
@@ -822,6 +979,8 @@ static SkylandexApp* skylandex_app_alloc() {
     view_dispatcher_add_view(app->view_dispatcher, ViewDetail, widget_get_view(app->detail_widget));
     view_dispatcher_add_view(
         app->view_dispatcher, ViewEmulate, widget_get_view(app->emulate_widget));
+    view_dispatcher_add_view(
+        app->view_dispatcher, ViewDeleteConfirm, widget_get_view(app->delete_confirm_widget));
 
     app->collection = collection_alloc();
     if(app->collection == NULL) {
@@ -848,6 +1007,7 @@ static void skylandex_app_free(SkylandexApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, ViewCollectionList);
     view_dispatcher_remove_view(app->view_dispatcher, ViewDetail);
     view_dispatcher_remove_view(app->view_dispatcher, ViewEmulate);
+    view_dispatcher_remove_view(app->view_dispatcher, ViewDeleteConfirm);
 
     submenu_free(app->menu);
     submenu_free(app->collection_menu);
@@ -855,6 +1015,7 @@ static void skylandex_app_free(SkylandexApp* app) {
     widget_free(app->collection_empty_widget);
     widget_free(app->detail_widget);
     widget_free(app->emulate_widget);
+    widget_free(app->delete_confirm_widget);
 
     if(app->collection != NULL) {
         collection_free(app->collection);

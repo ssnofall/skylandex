@@ -99,6 +99,16 @@ bool collection_add(
     return true;
 }
 
+// remove a collection entry by index and shift remaining entries
+bool collection_remove(Collection* collection, uint16_t index) {
+    if(collection == NULL || index >= collection->count) return false;
+    for(uint16_t i = index; i < collection->count - 1; i++) {
+        collection->entries[i] = collection->entries[i + 1];
+    }
+    collection->count--;
+    return true;
+}
+
 // ensure app data directory exists on SD card
 static bool collection_ensure_data_dir(void) {
     Storage* storage = furi_record_open(RECORD_STORAGE);

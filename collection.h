@@ -36,6 +36,7 @@ bool collection_add(
 
 bool collection_contains_uid(Collection* collection, const char* uid_hex);
 const CollectionEntry* collection_get_entry(Collection* collection, uint16_t index);
+bool collection_remove(Collection* collection, uint16_t index);
 bool collection_save(Collection* collection);
 bool collection_load(Collection* collection);
 void collection_format_date_now(char* out, size_t out_size);

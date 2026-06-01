@@ -14,6 +14,7 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | ✔ | LED color themed per element |
 | ✔ | Emulate a saved figure via NFC |
 | ✔ | Database lookup support for ALL Skylander figures (684 entries) |
+| ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
 | ❌ | On-device key gen: derives all 16 keys from UID |
 | ❌ | Full 16-sector read: use derived keys to dump everything |
 | ❌ | HALT state machine: go silent when portal says stop |
@@ -69,7 +70,7 @@ The Skylander lookup database covers **684 Skylanders across the entire franchis
 ## Development
 
 ### Prerequisites
-- [uFBT](https://github.com/flipperdevices/flipperzero-ufbt) — the micro Flipper Build Tool
+- [uFBT](https://github.com/flipperdevices/flipperzero-ufbt) - the micro Flipper Build Tool
 - A Flipper Zero running [Momentum firmware](https://github.com/Next-Flip/Momentum-Firmware) (other firmwares may work but are currently untested)
 - Python 3.14
 - A Skylander figure
@@ -128,11 +129,11 @@ The version field in the binary header must match `DB_VERSION` in `character_db.
 
 When the app launches, `character_db_init()` does the following:
 
-1. Tries to parse `/ext/apps_data/skylandex/skylander_db.bin` — on a match it loads directly
+1. Tries to parse `/ext/apps_data/skylandex/skylander_db.bin` - on a match it loads directly
 2. On failure, looks for `/ext/apps_assets/skylandex/skylander_db.bin` (auto-extracted by firmware from the `.fap`), copies it to the apps_data path, then parses
 3. If neither is found, all lookups return `NULL`
 
-Any rebuilt `.fap` automatically delivers the latest database to the SD card — no manual file copying needed.
+Any rebuilt `.fap` automatically delivers the latest database to the SD card - no manual file copying needed.
 
 #### Using compile_db.py
 

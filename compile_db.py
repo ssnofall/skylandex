@@ -1,26 +1,19 @@
-#!/usr/bin/env python3
-"""
-compile_db.py — Compiles skylander_db.json into skylander_db.bin
-for use with the Skylandex Flipper Zero app.
+# compile_db.py — Compiles skylander_db.json into skylander_db.bin
+# for use with the Skylandex Flipper Zero app.
 
-Binary format:
-  Header (12 bytes):
-    [uint32 magic]        — 0x4B445953 ("SKYD")
-    [uint32 version]      — DB_VERSION
-    [uint32 record_count]
+# Binary format:
+#  Header (12 bytes):
+#    [uint32 magic]        — 0x4B445953 ("SKYD")
+#    [uint32 version]      — DB_VERSION
+#    [uint32 record_count]
 
-  Record (52 bytes each, fixed-size):
-    [uint16 character_id]
-    [uint16 variant_id]
-    [uint8  element_id]
-    [uint8  padding]
-    [char   name[30]]     — null-terminated ASCII
-    [char   element[16]]  — null-terminated ASCII
-
-Usage:
-    python3 compile_db.py
-    python3 compile_db.py --input skylander_db.json --output resources/skylander_db.bin
-"""
+#  Record (52 bytes each, fixed-size):
+#    [uint16 character_id]
+#    [uint16 variant_id]
+#    [uint8  element_id]
+#    [uint8  padding]
+#    [char   name[30]]     — null-terminated ASCII
+#    [char   element[16]]  — null-terminated ASCII
 
 import json
 import struct
