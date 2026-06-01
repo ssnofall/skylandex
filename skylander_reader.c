@@ -56,21 +56,28 @@ static void format_block1_hex(const MfClassicBlock* block, char* out, size_t out
         block->data[7]);
 }
 
-// extract character ID from block 1
-static void parse_character_id_from_block1(
+// extract character ID and variant ID from block 1
+static void parse_ids_from_block1(
     const MfClassicBlock* block,
     ScanResult* result) {
     result->character_id = ((uint16_t)block->data[1] << 8) | block->data[0];
+    result->variant_id = ((uint16_t)block->data[3] << 8) | block->data[2];
 
     FURI_LOG_D(
         TAG,
-        "NFC decode id=0x%04X b1[0]=0x%02X b1[1]=0x%02X",
+        "NFC decode id=0x%04X var=0x%04X b1[0..3]=%02X %02X %02X %02X",
         result->character_id,
+        result->variant_id,
         block->data[0],
-        block->data[1]);
+        block->data[1],
+        block->data[2],
+        block->data[3]);
 
-    const SkylanderInfo* info = character_db_lookup(result->character_id);
-    result->element_id = (info != NULL) ? character_db_get_element(result->character_id) : 0;
+    const SkylanderInfo* info = character_db_lookup_by_variant(result->character_id, result->variant_id);
+    if(info == NULL) {
+        info = character_db_lookup(result->character_id);
+    }
+    result->element_id = (info != NULL) ? info->element_id : 0;
 }
 
 // allocate and initialize reader state
@@ -277,7 +284,7 @@ bool skylander_reader_read_sector0(SkylanderReader* reader, ScanResult* result) 
         sector0_blocks[0].data[3]);
     format_block0_hex(&sector0_blocks[0], result->block0_hex, sizeof(result->block0_hex));
     format_block1_hex(&sector0_blocks[1], result->block1_hex, sizeof(result->block1_hex));
-    parse_character_id_from_block1(&sector0_blocks[1], result);
+    parse_ids_from_block1(&sector0_blocks[1], result);
     result->has_character_id = true;
 
     reader->state = SkylanderReaderStateDone;

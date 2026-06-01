@@ -64,6 +64,7 @@ void collection_format_date_now(char* out, size_t out_size) {
 bool collection_add(
     Collection* collection,
     uint16_t character_id,
+    uint16_t variant_id,
     const char* name,
     const char* element,
     const char* uid_hex,
@@ -83,6 +84,7 @@ bool collection_add(
 
     // fill entry data
     entry->character_id = character_id;
+    entry->variant_id = variant_id;
 
     // copy strings safely into fixed-size buffers
     strlcpy(entry->name, (name != NULL) ? name : "Unknown", sizeof(entry->name));
@@ -94,6 +96,16 @@ bool collection_add(
     collection_format_date_now(entry->date_scanned, sizeof(entry->date_scanned));
 
     collection->count++;
+    return true;
+}
+
+// remove a collection entry by index and shift remaining entries
+bool collection_remove(Collection* collection, uint16_t index) {
+    if(collection == NULL || index >= collection->count) return false;
+    for(uint16_t i = index; i < collection->count - 1; i++) {
+        collection->entries[i] = collection->entries[i + 1];
+    }
+    collection->count--;
     return true;
 }
 

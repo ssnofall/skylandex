@@ -11,4 +11,5 @@ App(
     fap_description="Skylander NFC scanner, collection index, and emulator",
     fap_author="Snofall",
     fap_weburl="https://github.com/ssnofall/skylandex",
+    fap_file_assets="resources",
 )

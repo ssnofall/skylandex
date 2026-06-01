@@ -9,11 +9,12 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 |--------|---------|
 | ✔ | Scan and identify Skylander figure |
 | ✔ | Collection index saved to SD card |
-| ✔ | Detail view: name, element, UID, scan date |
+| ✔ | Detail view: name, element, UID, VID, scan date |
 | ✔ | Save NFC dump to SD card per figure |
 | ✔ | LED color themed per element |
 | ✔ | Emulate a saved figure via NFC |
-| ❌ | Database lookup support for ALL Skylander figures |
+| ✔ | Database lookup support for ALL Skylander figures (684 entries) |
+| ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
 | ❌ | On-device key gen: derives all 16 keys from UID |
 | ❌ | Full 16-sector read: use derived keys to dump everything |
 | ❌ | HALT state machine: go silent when portal says stop |
@@ -49,7 +50,7 @@ See the [Development](#development) section below.
 |------|------|
 | Collection index | `/ext/apps_data/skylandex/collection.bin` |
 | NFC dumps | `/ext/apps_data/skylandex/nfc/` |
-| Character Database | `/ext/apps_data/skylandex/skylander_db.bin` |
+| Skylander Database | `/ext/apps_data/skylandex/skylander_db.bin` |
 
 ## Supported Skylanders
 
@@ -61,23 +62,17 @@ The app reads, parses, and interacts with the standard **MIFARE Classic 1K** NFC
 
 > **Note on Traps:** *Trap Team* Traps use MIFARE Ultralight chips and are **not yet supported**.
 
-### Character database
-The internal character lookup database currently covers the **32 core Skylanders from *Spyro's Adventure***.
+### Skylander database
+The Skylander lookup database covers **684 Skylanders across the entire franchise**, including variants (Series 2, LightCore, Eon's Elite, etc.)
 
-The database can be expanded in `character_db.c`. Use the [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs) by [@Texthead1](https://github.com/Texthead1) to source IDs. Each entry needs the Skylander ID in hexadecimal, name, and element.
-
-**Example:**
-```c
-{0x0010, "Spyro", "Magic"}
-```
-
-> **Note on Databse:** Currently migrating the character database from a hardcoded array in 'character_db.c' to a file stored on the SD card, parsed at runtime. This will also add support for character variants via a second 'variant_id' field, allowing the app to distinguish between figures like base Spyro and Eon's Elite Spyro that share the same character ID.
+**Thank You!** [@Texthead1](https://github.com/Texthead1) for putting together a [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs).
 
 ## Development
 
 ### Prerequisites
-- [uFBT](https://github.com/flipperdevices/flipperzero-ufbt) — the micro Flipper Build Tool
+- [uFBT](https://github.com/flipperdevices/flipperzero-ufbt) - the micro Flipper Build Tool
 - A Flipper Zero running [Momentum firmware](https://github.com/Next-Flip/Momentum-Firmware) (other firmwares may work but are currently untested)
+- Python 3.14
 - A Skylander figure
 
 ### Setup
@@ -114,8 +109,44 @@ ufbt launch
 
 Or copy `dist/skylandex.fap` to `/ext/apps/NFC/` on the SD card manually.
 
+### Database
+
+The Skylander lookup database `skylander_db.json` is compiled into a fixed-length binary `/resources/skylander_db.bin` using `compile_db.py`. The binary is bundled into the `.fap` via `fap_file_assets="resources"` in `application.fam`.
+
+**Entry Example:**
+```json
+[
+  {"char_id": "0x0010", "variant_id": "0x0000", "name": "Spyro", "element": 1},
+  {"char_id": "0x0010", "variant_id": "0x3810", "name": "Spyro (Eon's Elite)", "element": 1},
+]
+```
+
+#### DB version
+
+The version field in the binary header must match `DB_VERSION` in `character_db.c`. If they differ, `character_db_init()` fails to parse the SD copy and falls back to copying a fresh version from the firmware assets. Bump `DB_VERSION` in both `compile_db.py` and `character_db.c` whenever you change the data or binary format.
+
+#### Auto-deploy
+
+When the app launches, `character_db_init()` does the following:
+
+1. Tries to parse `/ext/apps_data/skylandex/skylander_db.bin` - on a match it loads directly
+2. On failure, looks for `/ext/apps_assets/skylandex/skylander_db.bin` (auto-extracted by firmware from the `.fap`), copies it to the apps_data path, then parses
+3. If neither is found, all lookups return `NULL`
+
+Any rebuilt `.fap` automatically delivers the latest database to the SD card - no manual file copying needed.
+
+#### Using compile_db.py
+
+```bash
+# Default: reads skylander_db.json, writes resources/skylander_db.bin
+python compile_db.py
+
+# Custom paths
+python compile_db.py --input my_db.json --output my_db.bin
+```
+
 ### Contributing
-Pull requests are welcome. If you're adding Skylander entries to the character database, please source IDs from the [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs) and include the hex ID, name, and element for each entry.
+Pull requests are welcome. If you're adding Skylander entries, edit `skylander_db.json` and re-run `compile_db.py`. Source IDs from the [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs).
 
 ## Authors
 - [Snofall](https://github.com/ssnofall)
