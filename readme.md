@@ -49,6 +49,7 @@ See the [Development](#development) section below.
 |------|------|
 | Collection index | `/ext/apps_data/skylandex/collection.bin` |
 | NFC dumps | `/ext/apps_data/skylandex/nfc/` |
+| Character Database | `/ext/apps_data/skylandex/skylander_db.bin` |
 
 ## Supported Skylanders
 
