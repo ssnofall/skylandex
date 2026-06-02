@@ -379,6 +379,10 @@ bool skylander_reader_build_nfc_device(SkylanderReader* reader, NfcDevice* devic
         return false;
     }
 
+    // Set ATQA and SAK for MIFARE Classic 1K (standard values for Skylanders)
+    iso14443_3a_set_atqa(mf_data->iso14443_3a_data, (const uint8_t[]){0x00, 0x04});
+    iso14443_3a_set_sak(mf_data->iso14443_3a_data, 0x08);
+
     // copy all blocks from the full dump buffer
     for(uint8_t block = 0; block < SKYLANDER_TOTAL_BLOCKS; block++) {
         mf_classic_set_block_read(mf_data, block, &all_blocks[block]);

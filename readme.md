@@ -12,26 +12,14 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | ✔ | Detail view: name, element, UID, VID, XP, Gold, Hat, & more |
 | ✔ | Save NFC dump to SD card per figure |
 | ✔ | LED color themed per element; scan progress indicator (magenta blink during read) |
-| ✔ | Emulate a saved figure via NFC |
+| ✔ | Saved figure NFC file emulation |
 | ✔ | Database lookup support for ALL Skylander figures (684 entries) |
 | ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
 | ✔ | On-device key gen: derives all 16 keys from UID |
 | ✔ | Full 16-sector read: use derived keys to dump everything |
-| ❌ | HALT state machine: go silent when portal says stop |
+| 🔧 | HALT state machine [*(requires firmware fix - see below)*](#emulation-status) |
 | ❌ | Write back saves: so progress actually saves to the dump |
-| ❌ | Playable Skylander Figure Emulation|
-
-
-### Emulation status
-Emulation is present but limited. The portal will detect an emulated figure, but without on-device key generation only sector 0 is readable, meaning the character loads with no save data. Portal HALT handling is also not yet implemented.
-
-Fully functioning emulation depends on:
-- On-device key generation (DONE)
-- Full 16-sector backup (DONE)
-- HALT support (IN PROGRESS)
-- Write back saves (IN PROGRESS)
-
-> NOTE: Fully playable & functioning emulation is **in progress** right now.
+| 🔧 | Playable Skylander Figure Emulation [*(blocked by HALT - see below)*](#emulation-status) |
 
 ## Installation
 
@@ -149,6 +137,37 @@ python compile_db.py
 # Custom paths
 python compile_db.py --input my_db.json --output my_db.bin
 ```
+
+### Emulation status
+
+NFC file emulation is functional. You can save a Skylander's full 16-sector dump to the SD card, load it back, and emulate it via the NFC listener. The portal will detect the emulated figure and begin the loading animation.
+
+**The problem:** The loading animation restarts endlessly in a loop. The portal detects the figure, starts loading, but then immediately re-detects it as if it were placed fresh - over and over until the Flipper is removed from the portal.
+
+**Root cause:** This is a firmware-level bug in Momentum 12 (and likely other firmwares). The Flipper's NFC listener worker (`nfc_worker_listener` in `lib/nfc/nfc.c`) unconditionally calls `furi_hal_nfc_listener_idle()` when the reader's RF field drops (`FuriHalNfcEventFieldOff`). This sends `ST25R3916_CMD_GOTO_SENSE` to the ST25R3916 chip, resetting it from HALT state back to Idle/Sense mode. The chip then responds to REQA again, and the portal treats it as a new tag placement - restarting the animation.
+
+**Why this can't be fixed at the app level:** The `FieldOff` handler is hardcoded in the firmware's worker loop. The callback's return value is ignored for `FieldOff` events. Any HALT state set by the app is immediately overridden the next time the portal cycles its RF field. There is no SDK function or app-level code path that can prevent `furi_hal_nfc_listener_idle()` from running on `FieldOff`.
+
+**The fix (one line in firmware):** Change `furi_hal_nfc_listener_idle()` to `furi_hal_nfc_listener_sleep()` in the `FieldOff` handler. `furi_hal_nfc_listener_sleep()` sends `ST25R3916_CMD_GOTO_SLEEP` instead, keeping the chip in HALT state. The chip will only respond to WUPA (wake-up), which is the correct behavior - the portal uses WUPA to re-find tags, and a real Skylander figure stays silent after HLTA.
+
+```c
+// lib/nfc/nfc.c - nfc_worker_listener()
+// BEFORE (broken):
+if(event & FuriHalNfcEventFieldOff) {
+    nfc_event.type = NfcEventTypeFieldOff;
+    instance->callback(nfc_event, instance->context);
+    furi_hal_nfc_listener_idle();   // sends GOTO_SENSE → chip responds to REQA → re-detection loop
+}
+
+// AFTER (fixed):
+if(event & FuriHalNfcEventFieldOff) {
+    nfc_event.type = NfcEventTypeFieldOff;
+    instance->callback(nfc_event, instance->context);
+    furi_hal_nfc_listener_sleep();  // sends GOTO_SLEEP → chip stays halted → no re-detection
+}
+```
+
+**Status:** This fix needs to be applied upstream in the Momentum firmware. Until then, emulation will continue to loop. The app-level code is correct and ready - it just needs the firmware to maintain HALT state across RF field power cycles.
 
 ### Contributing
 Pull requests are welcome. If you're adding Skylander entries, edit `skylander_db.json` and re-run `compile_db.py`. Source IDs from the [Skylander-IDs repo](https://github.com/Texthead1/Skylander-IDs).

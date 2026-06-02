@@ -17,6 +17,7 @@
 #include <nfc/nfc_device.h>
 #include <nfc/nfc_listener.h>
 #include <nfc/protocols/mf_classic/mf_classic.h>
+#include <nfc/protocols/mf_classic/mf_classic_listener.h>
 
 // scenes
 typedef enum {
@@ -83,6 +84,9 @@ typedef struct {
     bool skylander_read_attempted;
     bool scan_scene_active;
     bool is_emulating;
+    bool tag_halted;
+    uint32_t auth_count;
+    uint32_t halt_count;
     uint8_t emulate_anim_frame;
     FuriTimer* emulate_timer;
     uint16_t selected_collection_index;
@@ -171,6 +175,28 @@ static void skylandex_stop_emulation(SkylandexApp* app) {
         app->emulate_device = NULL;
     }
     app->is_emulating = false;
+    app->tag_halted = false;
+    app->auth_count = 0;
+    app->halt_count = 0;
+}
+
+// emulation callback: tracks auth events from portal
+// NOTE: HALT and FieldOff events are consumed internally by the ISO 14443-3A
+// listener layer and never reach this callback. The Flipper firmware's
+// furi_hal_nfc_listener_idle() does not maintain ST25R3916 HALT state across
+// RF field power cycles, causing re-detection loops. This is a firmware issue.
+static NfcCommand skylandex_emulation_callback(NfcGenericEvent event, void* context) {
+    SkylandexApp* app = context;
+    UNUSED(event);
+
+    if(event.protocol == NfcProtocolMfClassic && event.event_data != NULL) {
+        const MfClassicListenerEvent* mf_event = event.event_data;
+        if(mf_event->type == MfClassicListenerEventTypeAuthContextFullCollected) {
+            app->auth_count++;
+        }
+    }
+
+    return NfcCommandContinue;
 }
 
 // display constants
@@ -880,15 +906,23 @@ static void emulate_stop_button_callback(GuiButtonType type, InputType input_typ
 
 static void emulate_redraw(SkylandexApp* app, const CollectionEntry* entry) {
     char header[32];
-    char status[24];
+    char status[32];
     static const char* const dots[] = {"", ".", "..", "..."};
 
     snprintf(header, sizeof(header), "%.18s", entry->name);
-    snprintf(
-        status,
-        sizeof(status),
-        "Emulating%s",
-        dots[app->emulate_anim_frame % COUNT_OF(dots)]);
+    if(app->tag_halted) {
+        snprintf(
+            status,
+            sizeof(status),
+            "Halted%s",
+            dots[app->emulate_anim_frame % COUNT_OF(dots)]);
+    } else {
+        snprintf(
+            status,
+            sizeof(status),
+            "Emulating%s",
+            dots[app->emulate_anim_frame % COUNT_OF(dots)]);
+    }
 
     widget_reset(app->emulate_widget);
     widget_add_string_element(
@@ -929,6 +963,8 @@ static void emulate_timer_start(SkylandexApp* app) {
 static void emulate_timer_stop(SkylandexApp* app) {
     if(app->emulate_timer != NULL) {
         furi_timer_stop(app->emulate_timer);
+        furi_timer_free(app->emulate_timer);
+        app->emulate_timer = NULL;
     }
 }
 
@@ -967,13 +1003,31 @@ static bool skylandex_start_emulation(SkylandexApp* app, const CollectionEntry* 
         skylandex_stop_emulation(app);
         return false;
     }
-    nfc_listener_start(app->emulator, NULL, NULL);
+    nfc_listener_start(app->emulator, skylandex_emulation_callback, app);
     app->is_emulating = true;
+    app->tag_halted = false;
+    app->auth_count = 0;
+    app->halt_count = 0;
+
     skylandex_feedback_emulate_start(app->notifications, entry->element);
     return true;
 }
 
 static void skylandex_stop_emulation_scene(SkylandexApp* app) {
+
+    if(app->is_emulating && app->emulator != NULL) {
+        const NfcDeviceData* device_data = nfc_listener_get_data(app->emulator, NfcProtocolMfClassic);
+        if(device_data != NULL) {
+            const CollectionEntry* entry = collection_get_entry(app->collection, app->selected_collection_index);
+            if(entry != NULL) {
+                NfcDevice* device = nfc_device_alloc();
+                nfc_device_set_data(device, NfcProtocolMfClassic, device_data);
+                skylander_nfc_save_device(device, entry->nfc_path);
+                nfc_device_free(device);
+            }
+        }
+    }
+
     emulate_timer_stop(app);
     skylandex_feedback_emulate_stop(app->notifications);
     skylandex_stop_emulation(app);
