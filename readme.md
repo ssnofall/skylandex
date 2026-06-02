@@ -131,7 +131,7 @@ Any rebuilt `.fap` automatically delivers the latest database to the SD card - n
 
 ### Application-layer decryption
 
-After solving the MIFARE Classic Crypto-1 layer (via UID-derived keys), a second encryption layer protects the game data. Skylanders figures encrypt all runtime data with **AES-128 ECB** — this includes XP, gold, nickname, hat, hero points, upgrade path, and heroic challenges. Without decryption, these fields are ciphertext (e.g. XP reads as 1.5M instead of the real value, which is capped at 33,000).
+After solving the MIFARE Classic Crypto-1 layer (via UID-derived keys), a second encryption layer protects the game data. Skylanders figures encrypt all runtime data with **AES-128 ECB** — this includes XP, gold, nickname, hat, hero points, upgrade path, and heroic challenges. Without decryption, these fields are ciphertext.
 
 **Which blocks are encrypted:** Blocks `0x08`-`0x0F` (sector 2) and `0x24`-`0x2F` (sector 9). Sector 0 (blocks `0x00`-`0x07`) is not encrypted.
 
