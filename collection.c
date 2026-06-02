@@ -164,6 +164,17 @@ bool collection_save(Collection* collection) {
     return success;
 }
 
+// old v3 entry format (no game data fields)
+typedef struct {
+    uint16_t character_id;
+    uint16_t variant_id;
+    char name[32];
+    char element[16];
+    char uid_hex[16];
+    char nfc_path[64];
+    char date_scanned[12];
+} CollectionEntryV3;
+
 // load collection database from collection.bin
 bool collection_load(Collection* collection) {
 
@@ -185,29 +196,53 @@ bool collection_load(Collection* collection) {
         uint32_t header_read = storage_file_read(fp, &header, sizeof(header));
         if(header_read == sizeof(header)) {
 
-            // validate file signature, version, and entry count
-            if((header.magic == COLLECTION_FILE_MAGIC) && (header.version == COLLECTION_FILE_VERSION) &&
-               (header.count <= MAX_FIGURES)) {
+            // validate file signature and entry count
+            if((header.magic == COLLECTION_FILE_MAGIC) && (header.count <= MAX_FIGURES)) {
                 collection->count = header.count;
 
-                // read collection entries
                 if(header.count > 0) {
-                    uint32_t entries_read = storage_file_read(
-                        fp,
-                        collection->entries,
-                        (uint32_t)(header.count * sizeof(CollectionEntry)));
+                    bool entries_ok = false;
 
-                    // verify all entries were loaded successfully
-                    if(entries_read ==
-                       (uint32_t)(header.count * sizeof(CollectionEntry))) {
+                    if(header.version == 4) {
+                        // v4: read entries with new struct size
+                        uint32_t entries_read = storage_file_read(
+                            fp,
+                            collection->entries,
+                            (uint32_t)(header.count * sizeof(CollectionEntry)));
+                        entries_ok = (entries_read == (uint32_t)(header.count * sizeof(CollectionEntry)));
+                    } else if(header.version == 3) {
+                        // v3: read entries one-by-one with old struct, zero-fill new fields
+                        entries_ok = true;
+                        for(uint16_t i = 0; i < header.count; i++) {
+                            CollectionEntryV3 old;
+                            if(storage_file_read(fp, &old, sizeof(CollectionEntryV3)) != sizeof(CollectionEntryV3)) {
+                                entries_ok = false;
+                                break;
+                            }
+                            CollectionEntry* e = &collection->entries[i];
+                            e->character_id = old.character_id;
+                            e->variant_id = old.variant_id;
+                            strlcpy(e->name, old.name, sizeof(e->name));
+                            strlcpy(e->element, old.element, sizeof(e->element));
+                            strlcpy(e->uid_hex, old.uid_hex, sizeof(e->uid_hex));
+                            strlcpy(e->nfc_path, old.nfc_path, sizeof(e->nfc_path));
+                            strlcpy(e->date_scanned, old.date_scanned, sizeof(e->date_scanned));
+                            // zero-fill new v4 fields
+                            e->dump_complete = false;
+                            e->level = 0;
+                            e->xp = 0;
+                            e->gold = 0;
+                            e->nickname[0] = '\0';
+                        }
+                    }
+
+                    if(entries_ok) {
                         success = true;
                     } else {
-
                         // reset collection if file data is incomplete/corrupted
                         memset(collection, 0, sizeof(Collection));
                     }
                 } else {
-
                     // valid empty collection file
                     success = true;
                 }

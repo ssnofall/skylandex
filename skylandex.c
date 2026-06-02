@@ -7,6 +7,7 @@
 #include <gui/modules/submenu.h>
 #include <gui/modules/widget.h>
 #include <storage/storage.h>
+#include <notification/notification_messages.h>
 
 #include "character_db.h"
 #include "collection.h"
@@ -24,6 +25,7 @@ typedef enum {
     SceneCollection,
     SceneDetail,
     SceneEmulate,
+    SceneAdvanced,
     SceneCount,
 } SceneId;
 
@@ -36,6 +38,7 @@ typedef enum {
     ViewDetail,
     ViewEmulate,
     ViewDeleteConfirm,
+    ViewAdvanced,
 } ViewId;
 
 // events
@@ -50,6 +53,7 @@ typedef enum {
     AppEventCollectionDelete,
     AppEventDeleteConfirmYes,
     AppEventDeleteConfirmNo,
+    AppEventAdvancedView,
 } AppEventType;
 
 // app state
@@ -84,6 +88,7 @@ typedef struct {
     uint16_t selected_collection_index;
     uint16_t collection_list_selection;
     Widget* delete_confirm_widget;
+    Widget* advanced_widget;
     bool long_press_active;
 } SkylandexApp;
 
@@ -108,6 +113,10 @@ void scene_emulate_on_enter(void* context);
 bool scene_emulate_on_event(void* context, SceneManagerEvent event);
 void scene_emulate_on_exit(void* context);
 
+void scene_advanced_on_enter(void* context);
+bool scene_advanced_on_event(void* context, SceneManagerEvent event);
+void scene_advanced_on_exit(void* context);
+
 // scene table
 static void (*const on_enter_handlers[])(void*) = {
     scene_menu_on_enter,
@@ -115,6 +124,7 @@ static void (*const on_enter_handlers[])(void*) = {
     scene_collection_on_enter,
     scene_detail_on_enter,
     scene_emulate_on_enter,
+    scene_advanced_on_enter,
 };
 
 static bool (*const on_event_handlers[])(void*, SceneManagerEvent) = {
@@ -123,6 +133,7 @@ static bool (*const on_event_handlers[])(void*, SceneManagerEvent) = {
     scene_collection_on_event,
     scene_detail_on_event,
     scene_emulate_on_event,
+    scene_advanced_on_event,
 };
 
 static void (*const on_exit_handlers[])(void*) = {
@@ -131,6 +142,7 @@ static void (*const on_exit_handlers[])(void*) = {
     scene_collection_on_exit,
     scene_detail_on_exit,
     scene_emulate_on_exit,
+    scene_advanced_on_exit,
 };
 
 static const SceneManagerHandlers scene_handlers = {
@@ -308,6 +320,7 @@ static void scan_draw_result(SkylandexApp* app) {
     char body[384];
 
     if(app->last_scan.read_ok) {
+        const char* dump_label = app->last_scan.is_full_dump ? "Full" : "Partial";
         snprintf(header, sizeof(header), "%s", name);
         if(app->status_message[0] != '\0') {
             snprintf(
@@ -315,23 +328,25 @@ static void scan_draw_result(SkylandexApp* app) {
                 sizeof(body),
                 "%s\n"
                 "\n"
-                "ID:  0x%04X\n"
-                "VID: 0x%04X\n"
-                "UID: %s",
+                "ID:  0x%04X  VID: 0x%04X\n"
+                "UID: %s\n"
+                "Dump: %s",
                 app->status_message,
                 app->last_scan.character_id,
                 app->last_scan.variant_id,
-                uid_text);
+                uid_text,
+                dump_label);
         } else {
             snprintf(
                 body,
                 sizeof(body),
-                "ID:  0x%04X\n"
-                "VID: 0x%04X\n"
-                "UID: %s",
+                "ID:  0x%04X  VID: 0x%04X\n"
+                "UID: %s\n"
+                "Dump: %s",
                 app->last_scan.character_id,
                 app->last_scan.variant_id,
-                uid_text);
+                uid_text,
+                dump_label);
         }
         skylandex_widget_set_screen_with_element(
             app->scan_widget, header, element, body, NULL, "Save", scan_button_callback, app);
@@ -426,6 +441,19 @@ static bool scan_save_figure(SkylandexApp* app) {
         return false;
     }
 
+    // set new metadata fields on the entry we just added
+    CollectionEntry* entry = &app->collection->entries[app->collection->count - 1];
+    entry->dump_complete = app->last_scan.is_full_dump;
+    entry->level = app->last_scan.level;
+    entry->xp = app->last_scan.xp;
+    entry->gold = app->last_scan.gold;
+    strlcpy(entry->nickname, app->last_scan.nickname, sizeof(entry->nickname));
+    entry->hero_points = app->last_scan.hero_points;
+    entry->hat_id = app->last_scan.hat_id;
+    entry->upgrade_path = app->last_scan.upgrade_path;
+    entry->platform_flags = app->last_scan.platform_flags;
+    entry->heroic_challenges = app->last_scan.heroic_challenges;
+
     if(!collection_save(app->collection)) {
         strlcpy(app->status_message, "Collection save failed", sizeof(app->status_message));
         return false;
@@ -441,10 +469,11 @@ bool scene_scan_on_event(void* context, SceneManagerEvent event) {
         if(event.event == AppEventTagDetected) {
             if(!app->scan_scene_active) return true;
             skylandex_feedback_reset(app->notifications);
+            notification_message(app->notifications, &sequence_blink_start_magenta);
             app->has_detection_info =
                 skylander_reader_get_detected_info(app->reader, &app->detection_info);
             app->skylander_read_attempted = true;
-            skylander_reader_read_sector0(app->reader, &app->last_scan);
+            skylander_reader_read_all(app->reader, &app->last_scan);
             app->has_character_match = false;
             if(app->last_scan.read_ok && app->last_scan.has_character_id) {
                 const SkylanderInfo* info = character_db_lookup_by_variant(
@@ -517,11 +546,28 @@ static SkylandexApp* g_app_for_input = NULL;
 static bool collection_list_input_callback(InputEvent* event, void* context) {
     UNUSED(context);
     SkylandexApp* app = g_app_for_input;
-    if(app == NULL) return false;
+    if(app == NULL || app->collection == NULL) return false;
+
+    if(event->key == InputKeyUp && event->type == InputTypePress) {
+        int32_t selected = submenu_get_selected_item(app->collection_menu);
+        if(selected > 0) {
+            submenu_set_selected_item(app->collection_menu, selected - 1);
+        }
+        return true;
+    }
+
+    if(event->key == InputKeyDown && event->type == InputTypePress) {
+        int32_t selected = submenu_get_selected_item(app->collection_menu);
+        if(selected < (int32_t)(app->collection->count - 1)) {
+            submenu_set_selected_item(app->collection_menu, selected + 1);
+        }
+        return true;
+    }
 
     if(event->key == InputKeyOk) {
         if(event->type == InputTypePress) {
             app->selected_collection_index = (uint16_t)submenu_get_selected_item(app->collection_menu);
+            app->long_press_active = false;
             return true;
         }
         if(event->type == InputTypeLong) {
@@ -534,9 +580,9 @@ static bool collection_list_input_callback(InputEvent* event, void* context) {
                 app->selected_collection_index = (uint16_t)submenu_get_selected_item(app->collection_menu);
                 view_dispatcher_send_custom_event(app->view_dispatcher, AppEventCollectionSelect);
             }
-            app->long_press_active = false;
             return true;
         }
+        return true;
     }
 
     return false;
@@ -718,35 +764,108 @@ static void detail_button_callback(GuiButtonType type, InputType input_type, voi
     if(input_type != InputTypePress) return;
     SkylandexApp* app = (SkylandexApp*)context;
     if(type == GuiButtonTypeLeft) {
-        view_dispatcher_send_custom_event(app->view_dispatcher, AppEventScanBack);
+        view_dispatcher_send_custom_event(app->view_dispatcher, AppEventAdvancedView);
     } else if(type == GuiButtonTypeRight) {
         view_dispatcher_send_custom_event(app->view_dispatcher, AppEventEmulateToggle);
     }
 }
 
 static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
-    char header[20];
+    char header[32];
     char body[384];
 
+    const char* dump_label = entry->dump_complete ? "Full" : "Partial";
+    const char* nickname_str = (entry->nickname[0] != '\0') ? entry->nickname : "(none)";
+
+    char plat_desc[32] = "";
+    uint8_t pf = entry->platform_flags;
+    char* sep = "";
+    if(pf & 0x01) {
+        snprintf(plat_desc, sizeof(plat_desc), "Wii");
+        sep = ", ";
+    }
+    if(pf & 0x02) {
+        snprintf(
+            plat_desc + strlen(plat_desc),
+            sizeof(plat_desc) - strlen(plat_desc),
+            "%sXbox 360",
+            sep);
+        sep = ", ";
+    }
+    if(pf & 0x04) {
+        snprintf(
+            plat_desc + strlen(plat_desc),
+            sizeof(plat_desc) - strlen(plat_desc),
+            "%sPS3",
+            sep);
+        sep = ", ";
+    }
+    if(pf & 0xF8) {
+        snprintf(
+            plat_desc + strlen(plat_desc),
+            sizeof(plat_desc) - strlen(plat_desc),
+            "%sUnknown",
+            sep);
+    }
+    if(pf == 0) {
+        strlcpy(plat_desc, "none", sizeof(plat_desc));
+    }
+
     snprintf(header, sizeof(header), "%.18s", entry->name);
-    snprintf(
-        body,
-        sizeof(body),
-        "ID:  0x%04X\n"
-        "VID: 0x%04X\n"
-        "UID: %s\n"
-        "Scanned %s\n",
-        entry->character_id,
-        entry->variant_id,
-        entry->uid_hex,
-        entry->date_scanned);
+
+    if(entry->dump_complete && (entry->xp > 0 || entry->gold > 0)) {
+        const char* upgrade_str = (entry->upgrade_path == 0xFD0F) ? "Left" :
+                                  (entry->upgrade_path == 0xFF0F) ? "Right" : "?";
+        snprintf(
+            body,
+            sizeof(body),
+            "ID:  0x%04X\n"
+            "VID: 0x%04X\n"
+            "UID: %s\n"
+            "Dump: %s\n"
+            "XP: %lu\n"
+            "Gold: %lu\n"
+            "Nick: %s\n"
+            "Hat: 0x%04X\n"
+            "Hero: %u\n"
+            "Upgrade: %s\n"
+            "Plat: 0x%02X (%s)\n"
+            "Scanned %s",
+            entry->character_id,
+            entry->variant_id,
+            entry->uid_hex,
+            dump_label,
+            (unsigned long)entry->xp,
+            (unsigned long)entry->gold,
+            nickname_str,
+            entry->hat_id,
+            entry->hero_points,
+            upgrade_str,
+            entry->platform_flags,
+            plat_desc,
+            entry->date_scanned);
+    } else {
+        snprintf(
+            body,
+            sizeof(body),
+            "ID:  0x%04X  VID: 0x%04X\n"
+            "UID: %s\n"
+            "Dump: %s\n"
+            "Rescan figure for full data\n"
+            "Scanned %s",
+            entry->character_id,
+            entry->variant_id,
+            entry->uid_hex,
+            dump_label,
+            entry->date_scanned);
+    }
 
     skylandex_widget_set_screen_with_element(
         app->detail_widget,
         header,
         entry->element,
         body,
-        NULL,
+        "Advanced",
         "Emulate",
         detail_button_callback,
         app);
@@ -872,8 +991,10 @@ bool scene_detail_on_event(void* context, SceneManagerEvent event) {
             }
             return true;
         }
-        if(event.event == AppEventScanBack) {
-            scene_manager_previous_scene(app->scene_manager);
+        if(event.event == AppEventAdvancedView) {
+            if(entry != NULL) {
+                scene_manager_next_scene(app->scene_manager, SceneAdvanced);
+            }
             return true;
         }
     }
@@ -936,6 +1057,116 @@ void scene_emulate_on_exit(void* context) {
     widget_reset(app->emulate_widget);
 }
 
+void scene_advanced_on_enter(void* context) {
+    SkylandexApp* app = (SkylandexApp*)context;
+    const CollectionEntry* entry =
+        collection_get_entry(app->collection, app->selected_collection_index);
+    if(entry == NULL) {
+        scene_manager_previous_scene(app->scene_manager);
+        return;
+    }
+
+    widget_reset(app->advanced_widget);
+    widget_add_string_element(
+        app->advanced_widget, 64, SKYLANDEX_HEADER_Y, AlignCenter, AlignTop,
+        FontPrimary, "Sector Data");
+
+    // load the nfc file to get full sector data
+    NfcDevice* device = nfc_device_alloc();
+    bool loaded = nfc_device_load(device, entry->nfc_path);
+    if(!loaded) {
+        widget_add_string_multiline_element(
+            app->advanced_widget, 64, 28, AlignCenter, AlignCenter,
+            FontSecondary, "Cannot load NFC dump");
+        nfc_device_free(device);
+        view_dispatcher_switch_to_view(app->view_dispatcher, ViewAdvanced);
+        return;
+    }
+
+    // copy the MfClassic data out of the opaque device handle
+    MfClassicData* mf_data = mf_classic_alloc();
+    nfc_device_copy_data(device, NfcProtocolMfClassic, (NfcDeviceData*)mf_data);
+
+    // get UID using the accessor function
+    size_t uid_len = 0;
+    const uint8_t* uid = mf_classic_get_uid(mf_data, &uid_len);
+
+    // derive keys for display
+    MfClassicKey keys[SKYLANDER_NUM_SECTORS];
+    if(uid != NULL && uid_len >= 4) {
+        skylander_keygen_derive_all(uid, keys);
+    }
+
+    // build sector-by-sector display text
+    char body[2048];
+    size_t pos = 0;
+
+    for(uint8_t s = 0; s < SKYLANDER_NUM_SECTORS; s++) {
+        bool any_block_read = false;
+        for(uint8_t bo = 0; bo < SKYLANDER_BLOCKS_PER_SECTOR; bo++) {
+            uint8_t bn = s * SKYLANDER_BLOCKS_PER_SECTOR + bo;
+            if(mf_classic_is_block_read(mf_data, bn)) {
+                any_block_read = true;
+                break;
+            }
+        }
+        const char* status_str = any_block_read ? "OK" : "--";
+
+        pos += snprintf(body + pos, sizeof(body) - pos,
+            "Sector %u [%s]\n", s, status_str);
+
+        for(uint8_t bo = 0; bo < SKYLANDER_BLOCKS_PER_SECTOR; bo++) {
+            uint8_t bn = s * SKYLANDER_BLOCKS_PER_SECTOR + bo;
+            pos += snprintf(body + pos, sizeof(body) - pos, "  B%u:", bo);
+            if(mf_classic_is_block_read(mf_data, bn)) {
+                for(int i = 0; i < 16; i++) {
+                    pos += snprintf(body + pos, sizeof(body) - pos,
+                        " %02X", mf_data->block[bn].data[i]);
+                }
+            } else {
+                pos += snprintf(body + pos, sizeof(body) - pos, " --");
+            }
+            pos += snprintf(body + pos, sizeof(body) - pos, "\n");
+        }
+
+        // show derived keys
+        if(uid != NULL && uid_len >= 4) {
+            pos += snprintf(body + pos, sizeof(body) - pos,
+                "  KA: %02X%02X%02X%02X%02X%02X  KB: (derived)\n",
+                keys[s].data[0], keys[s].data[1], keys[s].data[2],
+                keys[s].data[3], keys[s].data[4], keys[s].data[5]);
+        }
+
+        if(s < SKYLANDER_NUM_SECTORS - 1) {
+            pos += snprintf(body + pos, sizeof(body) - pos, "\n");
+        }
+
+        if(pos >= sizeof(body) - 200) break;
+    }
+
+    mf_classic_free(mf_data);
+    nfc_device_free(device);
+
+    widget_add_text_scroll_element(
+        app->advanced_widget, 0, SKYLANDEX_BODY_Y,
+        SKYLANDEX_SCREEN_W, SKYLANDEX_BODY_H + 16, body);
+    view_dispatcher_switch_to_view(app->view_dispatcher, ViewAdvanced);
+}
+
+bool scene_advanced_on_event(void* context, SceneManagerEvent event) {
+    SkylandexApp* app = (SkylandexApp*)context;
+    if(event.type == SceneManagerEventTypeBack) {
+        scene_manager_previous_scene(app->scene_manager);
+        return true;
+    }
+    return false;
+}
+
+void scene_advanced_on_exit(void* context) {
+    SkylandexApp* app = (SkylandexApp*)context;
+    widget_reset(app->advanced_widget);
+}
+
 static bool app_back_handler(void* context) {
     SkylandexApp* app = (SkylandexApp*)context;
     return scene_manager_handle_back_event(app->scene_manager);
@@ -969,6 +1200,7 @@ static SkylandexApp* skylandex_app_alloc() {
     app->detail_widget = widget_alloc();
     app->emulate_widget = widget_alloc();
     app->delete_confirm_widget = widget_alloc();
+    app->advanced_widget = widget_alloc();
 
     view_dispatcher_add_view(app->view_dispatcher, ViewMenu, submenu_get_view(app->menu));
     view_dispatcher_add_view(app->view_dispatcher, ViewScan, widget_get_view(app->scan_widget));
@@ -981,6 +1213,8 @@ static SkylandexApp* skylandex_app_alloc() {
         app->view_dispatcher, ViewEmulate, widget_get_view(app->emulate_widget));
     view_dispatcher_add_view(
         app->view_dispatcher, ViewDeleteConfirm, widget_get_view(app->delete_confirm_widget));
+    view_dispatcher_add_view(
+        app->view_dispatcher, ViewAdvanced, widget_get_view(app->advanced_widget));
 
     app->collection = collection_alloc();
     if(app->collection == NULL) {
@@ -1008,6 +1242,7 @@ static void skylandex_app_free(SkylandexApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, ViewDetail);
     view_dispatcher_remove_view(app->view_dispatcher, ViewEmulate);
     view_dispatcher_remove_view(app->view_dispatcher, ViewDeleteConfirm);
+    view_dispatcher_remove_view(app->view_dispatcher, ViewAdvanced);
 
     submenu_free(app->menu);
     submenu_free(app->collection_menu);
@@ -1016,6 +1251,7 @@ static void skylandex_app_free(SkylandexApp* app) {
     widget_free(app->detail_widget);
     widget_free(app->emulate_widget);
     widget_free(app->delete_confirm_widget);
+    widget_free(app->advanced_widget);
 
     if(app->collection != NULL) {
         collection_free(app->collection);

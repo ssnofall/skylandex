@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #define MAX_FIGURES 32
-#define COLLECTION_FILE_VERSION 3
+#define COLLECTION_FILE_VERSION 4
 
 typedef struct {
     uint16_t character_id;
@@ -15,6 +15,16 @@ typedef struct {
     char uid_hex[16];
     char nfc_path[64];
     char date_scanned[12];
+    bool dump_complete;
+    uint16_t level;
+    uint32_t xp;
+    uint32_t gold;
+    char nickname[20];
+    uint16_t hero_points;
+    uint16_t hat_id;
+    uint16_t upgrade_path;
+    uint8_t platform_flags;
+    uint32_t heroic_challenges;
 } CollectionEntry;
 
 typedef struct {

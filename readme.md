@@ -9,24 +9,29 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 |--------|---------|
 | ✔ | Scan and identify Skylander figure |
 | ✔ | Collection index saved to SD card |
-| ✔ | Detail view: name, element, UID, VID, scan date |
+| ✔ | Detail view: name, element, UID, VID, XP, Gold, Hat, & more |
 | ✔ | Save NFC dump to SD card per figure |
-| ✔ | LED color themed per element |
+| ✔ | LED color themed per element; scan progress indicator (magenta blink during read) |
 | ✔ | Emulate a saved figure via NFC |
 | ✔ | Database lookup support for ALL Skylander figures (684 entries) |
 | ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
-| ❌ | On-device key gen: derives all 16 keys from UID |
-| ❌ | Full 16-sector read: use derived keys to dump everything |
+| ✔ | On-device key gen: derives all 16 keys from UID |
+| ✔ | Full 16-sector read: use derived keys to dump everything |
 | ❌ | HALT state machine: go silent when portal says stop |
 | ❌ | Write back saves: so progress actually saves to the dump |
+| ❌ | Playable Skylander Figure Emulation|
+
 
 ### Emulation status
 Emulation is present but limited. The portal will detect an emulated figure, but without on-device key generation only sector 0 is readable, meaning the character loads with no save data. Portal HALT handling is also not yet implemented.
 
 Fully functioning emulation depends on:
-- On-device key generation
-- Full 16-sector backup
-- HALT support
+- On-device key generation (DONE)
+- Full 16-sector backup (DONE)
+- HALT support (IN PROGRESS)
+- Write back saves (IN PROGRESS)
+
+> NOTE: Fully playable & functioning emulation is **in progress** right now.
 
 ## Installation
 
@@ -43,7 +48,7 @@ See the [Development](#development) section below.
 2. Select **Scan Figure** and hold a Skylander to the back of your Flipper
 3. Once identified, press **Save** to add it to your collection
 4. Select **My Skylandex** to browse saved Skylanders
-5. Select any Skylander to view its details or emulate it
+5. Select any Skylander to view its details. Press **Left** for sector data, **Right** to emulate
 
 ### SD card paths
 | Data | Path |
