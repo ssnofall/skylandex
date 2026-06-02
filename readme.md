@@ -17,6 +17,7 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
 | ✔ | On-device key gen: derives all 16 keys from UID |
 | ✔ | Full 16-sector read: use derived keys to dump everything |
+| ✔ | AES-128 app-layer decryption: real XP, Gold, Nickname, Hat, & more |
 | 🔧 | HALT state machine [*(requires firmware fix - see below)*](#emulation-status) |
 | ❌ | Write back saves: so progress actually saves to the dump |
 | 🔧 | Playable Skylander Figure Emulation [*(blocked by HALT - see below)*](#emulation-status) |
@@ -127,6 +128,21 @@ When the app launches, `character_db_init()` does the following:
 3. If neither is found, all lookups return `NULL`
 
 Any rebuilt `.fap` automatically delivers the latest database to the SD card - no manual file copying needed.
+
+### Application-layer decryption
+
+After solving the MIFARE Classic Crypto-1 layer (via UID-derived keys), a second encryption layer protects the game data. Skylanders figures encrypt all runtime data with **AES-128 ECB** — this includes XP, gold, nickname, hat, hero points, upgrade path, and heroic challenges. Without decryption, these fields are ciphertext (e.g. XP reads as 1.5M instead of the real value, which is capped at 33,000).
+
+**Which blocks are encrypted:** Blocks `0x08`-`0x0F` (sector 2) and `0x24`-`0x2F` (sector 9). Sector 0 (blocks `0x00`-`0x07`) is not encrypted.
+
+**Key derivation:** Each block gets its own AES key, derived by MD5-hashing an 86-byte input:
+- Bytes 0-31: first 32 bytes of the tag (blocks 0x00 + 0x01, containing the UID)
+- Byte 32: the block index being decrypted
+- Bytes 33-85: the 53-byte Activision copyright constant `" Copyright (C) 2010 Activision. All Rights Reserved. "`
+
+**Decryption:** The 16-byte MD5 output is used as an AES-128 key to ECB-decrypt the 16-byte block in place.
+
+**Implementation note:** The Flipper firmware's mbedTLS symbols (AES, MD5) are disabled for external apps, so this module includes self-contained AES-128 ECB and MD5 implementations.
 
 #### Using compile_db.py
 

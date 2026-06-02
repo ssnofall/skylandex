@@ -354,7 +354,8 @@ static void scan_draw_result(SkylandexApp* app) {
                 sizeof(body),
                 "%s\n"
                 "\n"
-                "ID:  0x%04X  VID: 0x%04X\n"
+                "ID:  0x%04X\n"
+                "VID: 0x%04X\n"
                 "UID: %s\n"
                 "Dump: %s",
                 app->status_message,
@@ -366,7 +367,8 @@ static void scan_draw_result(SkylandexApp* app) {
             snprintf(
                 body,
                 sizeof(body),
-                "ID:  0x%04X  VID: 0x%04X\n"
+                "ID:  0x%04X\n"
+                "VID: 0x%04X\n"
                 "UID: %s\n"
                 "Dump: %s",
                 app->last_scan.character_id,
@@ -803,45 +805,29 @@ static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
     const char* dump_label = entry->dump_complete ? "Full" : "Partial";
     const char* nickname_str = (entry->nickname[0] != '\0') ? entry->nickname : "(none)";
 
-    char plat_desc[32] = "";
-    uint8_t pf = entry->platform_flags;
-    char* sep = "";
-    if(pf & 0x01) {
-        snprintf(plat_desc, sizeof(plat_desc), "Wii");
-        sep = ", ";
-    }
-    if(pf & 0x02) {
-        snprintf(
-            plat_desc + strlen(plat_desc),
-            sizeof(plat_desc) - strlen(plat_desc),
-            "%sXbox 360",
-            sep);
-        sep = ", ";
-    }
-    if(pf & 0x04) {
-        snprintf(
-            plat_desc + strlen(plat_desc),
-            sizeof(plat_desc) - strlen(plat_desc),
-            "%sPS3",
-            sep);
-        sep = ", ";
-    }
-    if(pf & 0xF8) {
-        snprintf(
-            plat_desc + strlen(plat_desc),
-            sizeof(plat_desc) - strlen(plat_desc),
-            "%sUnknown",
-            sep);
-    }
-    if(pf == 0) {
-        strlcpy(plat_desc, "none", sizeof(plat_desc));
-    }
-
     snprintf(header, sizeof(header), "%.18s", entry->name);
 
     if(entry->dump_complete && (entry->xp > 0 || entry->gold > 0)) {
         const char* upgrade_str = (entry->upgrade_path == 0xFD0F) ? "Left" :
                                   (entry->upgrade_path == 0xFF0F) ? "Right" : "?";
+        char plat_str[32];
+        plat_str[0] = '\0';
+        if(entry->platform_flags & 0x01) strlcpy(plat_str, "Wii", sizeof(plat_str));
+        if(entry->platform_flags & 0x02) {
+            if(plat_str[0]) strlcat(plat_str, "+", sizeof(plat_str));
+            strlcat(plat_str, "Xbox360", sizeof(plat_str));
+        }
+        if(entry->platform_flags & 0x04) {
+            if(plat_str[0]) strlcat(plat_str, "+", sizeof(plat_str));
+            strlcat(plat_str, "PS3", sizeof(plat_str));
+        }
+        if(entry->platform_flags & 0xF8) {
+            if(plat_str[0]) strlcat(plat_str, " ", sizeof(plat_str));
+            char hex[12];
+            snprintf(hex, sizeof(hex), "(0x%02X)", entry->platform_flags);
+            strlcat(plat_str, hex, sizeof(plat_str));
+        }
+        if(plat_str[0] == '\0') strlcpy(plat_str, "None", sizeof(plat_str));
         snprintf(
             body,
             sizeof(body),
@@ -855,7 +841,7 @@ static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
             "Hat: 0x%04X\n"
             "Hero: %u\n"
             "Upgrade: %s\n"
-            "Plat: 0x%02X (%s)\n"
+            "Plat: %s\n"
             "Scanned %s",
             entry->character_id,
             entry->variant_id,
@@ -867,14 +853,14 @@ static void detail_draw(SkylandexApp* app, const CollectionEntry* entry) {
             entry->hat_id,
             entry->hero_points,
             upgrade_str,
-            entry->platform_flags,
-            plat_desc,
+            plat_str,
             entry->date_scanned);
     } else {
         snprintf(
             body,
             sizeof(body),
-            "ID:  0x%04X  VID: 0x%04X\n"
+            "ID:  0x%04X\n"
+            "VID: 0x%04X\n"
             "UID: %s\n"
             "Dump: %s\n"
             "Rescan figure for full data\n"
