@@ -12,8 +12,11 @@ static const char* TAG = "SkylanderReader";
 // default Skylanders sector 0 key
 static const MfClassicKey SKYLANDER_SECTOR0_KEY = {.data = {0x4B, 0x0B, 0x20, 0x10, 0x7C, 0xCB}};
 
-// cached sector 0 blocks
+// cached sector 0 blocks (kept for compatibility with non-Skylander tags)
 static MfClassicBlock sector0_blocks[4];
+
+// full dump storage for Skylander tags
+static MfClassicBlock all_blocks[SKYLANDER_TOTAL_BLOCKS];
 
 // convert MfClassicKey into uint64 format
 static uint64_t mf_classic_key_to_uint64(const MfClassicKey* key) {
@@ -182,7 +185,181 @@ bool skylander_reader_get_detected_info(SkylanderReader* reader, ScanDetectionIn
     return true;
 }
 
-// build an NFC device from cached sector 0 data
+// parse game data fields from raw blocks
+// Two data areas (area 0 at blocks 0x08-0x10, area 1 at blocks 0x24-0x2C).
+// The one with the higher sequence byte (offset 0x09) is the active save.
+static uint8_t area0_seq_block = 8;  // block 0x08
+static uint8_t area1_seq_block = 36; // block 0x24
+static uint8_t area_seq_offset = 9;  // sequence byte offset within block
+
+static uint16_t read_16le(const uint8_t* data, uint8_t offset) {
+    return (uint16_t)(data[offset] | (data[offset + 1] << 8));
+}
+
+static uint32_t read_24le(const uint8_t* data, uint8_t offset) {
+    return (uint32_t)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16));
+}
+
+static uint32_t read_32le(const uint8_t* data, uint8_t offset) {
+    return (uint32_t)(data[offset] | (data[offset + 1] << 8) |
+                      (data[offset + 2] << 16) | (data[offset + 3] << 24));
+}
+
+void skylander_reader_parse_game_data(ScanResult* result) {
+    if(!result->is_full_dump) return;
+    if(result->all_blocks[0].data[0] == 0) return;
+
+    // determine active area by sequence byte
+    uint8_t seq0 = result->all_blocks[area0_seq_block].data[area_seq_offset];
+    uint8_t seq1 = result->all_blocks[area1_seq_block].data[area_seq_offset];
+    bool use_area1 = (seq1 > seq0);
+
+    uint8_t exp_block = use_area1 ? 36 : 8;          // 0x24 or 0x08
+    uint8_t nick_block_a = use_area1 ? 38 : 10;       // 0x26 or 0x0A
+    uint8_t nick_block_b = use_area1 ? 40 : 12;       // 0x28 or 0x0C
+    uint8_t stat_block = use_area1 ? 41 : 13;         // 0x29 or 0x0D
+    uint8_t skill_block = use_area1 ? 37 : 9;         // 0x25 or 0x09
+    uint8_t flags_block = use_area1 ? 44 : 16;        // 0x2C or 0x10
+
+    // XP: 24-bit LE at offset 0 (max 33000)
+    result->xp = read_24le(result->all_blocks[exp_block].data, 0);
+    result->level = (uint16_t)result->xp;
+
+    // Gold: 16-bit LE at offset 3 (max 65000)
+    result->gold = read_16le(result->all_blocks[exp_block].data, 3);
+
+    // Hero points: 16-bit LE at offset 0x0A (max 100)
+    result->hero_points = read_16le(result->all_blocks[stat_block].data, 0x0A);
+
+    // Hat ID: 16-bit LE at offset 4
+    result->hat_id = read_16le(result->all_blocks[skill_block].data, 4);
+
+    // Upgrade path: 16-bit LE at offset 0
+    result->upgrade_path = read_16le(result->all_blocks[skill_block].data, 0);
+
+    // Platform flags: 8-bit at offset 3
+    result->platform_flags = result->all_blocks[skill_block].data[3];
+
+    // Heroic challenges: 32-bit LE at offset 0x0C
+    result->heroic_challenges = read_32le(result->all_blocks[flags_block].data, 0x0C);
+
+    // Nickname: UTF-16LE in two consecutive blocks, decode as ASCII
+    char nick_buf[32];
+    size_t ni = 0;
+    for(int b = 0; b < 2 && ni < sizeof(nick_buf) - 1; b++) {
+        const uint8_t* block_data = (b == 0) ? result->all_blocks[nick_block_a].data
+                                             : result->all_blocks[nick_block_b].data;
+        for(int i = 0; i < 16 && ni < sizeof(nick_buf) - 1; i += 2) {
+            uint16_t cp = (uint16_t)(block_data[i] | (block_data[i + 1] << 8));
+            if(cp == 0) break;
+            if(cp < 128) nick_buf[ni++] = (char)cp;
+        }
+        if(ni > 0 && nick_buf[ni - 1] == '\0') break;
+    }
+    nick_buf[ni] = '\0';
+    strlcpy(result->nickname, nick_buf, sizeof(result->nickname));
+}
+
+// read all 16 sectors from a Skylander tag using on-device key derivation
+bool skylander_reader_read_all(SkylanderReader* reader, ScanResult* result) {
+    if((reader->state != SkylanderReaderStateTagDetected) || (result == NULL)) return false;
+
+    if(reader->detected_protocol != NfcProtocolMfClassic) {
+        FURI_LOG_D(TAG, "Skipping full read for protocol=%s",
+                   nfc_device_get_protocol_name(reader->detected_protocol));
+        reader->state = SkylanderReaderStateDone;
+        return false;
+    }
+
+    // initialize result
+    memset(result, 0, sizeof(ScanResult));
+    strlcpy(result->uid_hex, "UID unavailable", sizeof(result->uid_hex));
+    strlcpy(result->block0_hex, "-------- --------", sizeof(result->block0_hex));
+    strlcpy(result->block1_hex, "-------- --------", sizeof(result->block1_hex));
+
+    reader->has_sector0_dump = false;
+    reader->state = SkylanderReaderStateReading;
+
+    if(reader->is_running) {
+        FURI_LOG_D(TAG, "Stopping scanner before full read");
+        nfc_scanner_stop(reader->scanner);
+        reader->is_running = false;
+    }
+
+    // detect Mifare Classic type
+    MfClassicType detected_type = MfClassicType1k;
+    if(mf_classic_poller_sync_detect_type(reader->nfc, &detected_type) == MfClassicErrorNone) {
+        reader->mf_type = detected_type;
+    }
+
+    // read sector 0 with the well-known key
+    MfClassicKey key = SKYLANDER_SECTOR0_KEY;
+    for(uint8_t block = 0; block < 4; block++) {
+        FURI_LOG_D(TAG, "Reading sector0 block %u", block);
+        MfClassicError error =
+            mf_classic_poller_sync_read_block(reader->nfc, block, &key, MfClassicKeyTypeA, &all_blocks[block]);
+        if(error != MfClassicErrorNone) {
+            reader->state = SkylanderReaderStateError;
+            FURI_LOG_W(TAG, "Sector0 block %u read failed: %d", block, error);
+            return false;
+        }
+        sector0_blocks[block] = all_blocks[block];
+    }
+
+    reader->has_sector0_dump = true;
+    result->read_ok = true;
+    result->uid_available = true;
+
+    // extract UID and derive keys
+    const uint8_t* uid = all_blocks[0].data;
+    snprintf(result->uid_hex, sizeof(result->uid_hex), "%02X:%02X:%02X:%02X",
+             uid[0], uid[1], uid[2], uid[3]);
+    format_block0_hex(&all_blocks[0], result->block0_hex, sizeof(result->block0_hex));
+    format_block1_hex(&all_blocks[1], result->block1_hex, sizeof(result->block1_hex));
+    parse_ids_from_block1(&all_blocks[1], result);
+    result->has_character_id = true;
+
+    // derive all 16 keys from UID
+    skylander_keygen_derive_all(uid, result->derived_keys);
+
+    // store sector 0 key in result
+    result->derived_keys[0] = SKYLANDER_SECTOR0_KEY;
+    result->sector_status[0] = SkylanderSectorReadOK;
+
+    // read sectors 1-15
+    for(uint8_t s = 1; s < SKYLANDER_NUM_SECTORS; s++) {
+        bool all_ok = true;
+        for(uint8_t bo = 0; bo < SKYLANDER_BLOCKS_PER_SECTOR; bo++) {
+            uint8_t block_num = s * SKYLANDER_BLOCKS_PER_SECTOR + bo;
+            FURI_LOG_D(TAG, "Reading sector %u block %u (abs %u)", s, bo, block_num);
+            MfClassicError error = mf_classic_poller_sync_read_block(
+                reader->nfc, block_num, &result->derived_keys[s],
+                MfClassicKeyTypeA, &all_blocks[block_num]);
+            if(error != MfClassicErrorNone) {
+                all_ok = false;
+                FURI_LOG_W(TAG, "Sector %u block %u read failed: %d", s, bo, error);
+                // zero the failed block
+                memset(&all_blocks[block_num], 0, sizeof(MfClassicBlock));
+            }
+        }
+        result->sector_status[s] = all_ok ? SkylanderSectorReadOK : SkylanderSectorReadFailed;
+    }
+
+    result->is_full_dump = true;
+
+    // copy all blocks back to result
+    memcpy(result->all_blocks, all_blocks, sizeof(all_blocks));
+
+    // parse game data (placeholder)
+    skylander_reader_parse_game_data(result);
+
+    reader->state = SkylanderReaderStateDone;
+    FURI_LOG_D(TAG, "Full read OK uid=%s id=0x%04X is_full=%d",
+               result->uid_hex, result->character_id, result->is_full_dump);
+    return true;
+}
+
+// build an NFC device from cached sector data (all blocks if available)
 bool skylander_reader_build_nfc_device(SkylanderReader* reader, NfcDevice* device) {
     if((reader == NULL) || (device == NULL) || !reader->has_sector0_dump) return false;
 
@@ -202,17 +379,17 @@ bool skylander_reader_build_nfc_device(SkylanderReader* reader, NfcDevice* devic
         return false;
     }
 
-    // copy cached sector 0 blocks
-    for(uint8_t block = 0; block < 4; block++) {
-        mf_classic_set_block_read(mf_data, block, &sector0_blocks[block]);
+    // copy all blocks from the full dump buffer
+    for(uint8_t block = 0; block < SKYLANDER_TOTAL_BLOCKS; block++) {
+        mf_classic_set_block_read(mf_data, block, &all_blocks[block]);
     }
 
-    // mark sector key as known
-    mf_classic_set_key_found(
-        mf_data,
-        0,
-        MfClassicKeyTypeA,
-        mf_classic_key_to_uint64(&SKYLANDER_SECTOR0_KEY));
+    // derive keys from UID and mark all as known
+    MfClassicKey keys[SKYLANDER_NUM_SECTORS];
+    skylander_keygen_derive_all(uid, keys);
+    for(uint8_t s = 0; s < SKYLANDER_NUM_SECTORS; s++) {
+        mf_classic_set_key_found(mf_data, s, MfClassicKeyTypeA, mf_classic_key_to_uint64(&keys[s]));
+    }
 
     nfc_device_set_data(device, NfcProtocolMfClassic, mf_data);
     mf_classic_free(mf_data);
@@ -267,6 +444,8 @@ bool skylander_reader_read_sector0(SkylanderReader* reader, ScanResult* result) 
             FURI_LOG_W(TAG, "Sector0 block %u read failed: %d", block, error);
             return false;
         }
+        // also populate all_blocks for full dump
+        all_blocks[block] = sector0_blocks[block];
     }
 
     reader->has_sector0_dump = true;

@@ -6,6 +6,13 @@
 #include <nfc/nfc_device.h>
 #include <nfc/nfc_scanner.h>
 #include <nfc/protocols/mf_classic/mf_classic.h>
+#include "skylander_keygen.h"
+
+typedef enum {
+    SkylanderSectorReadOK,
+    SkylanderSectorReadFailed,
+    SkylanderSectorReadLocked,
+} SkylanderSectorStatus;
 
 typedef struct {
     bool detected;
@@ -25,6 +32,19 @@ typedef struct {
     uint16_t variant_id;
     uint8_t element_id;
     bool has_character_id;
+    MfClassicBlock all_blocks[SKYLANDER_TOTAL_BLOCKS];
+    MfClassicKey derived_keys[SKYLANDER_NUM_SECTORS];
+    SkylanderSectorStatus sector_status[SKYLANDER_NUM_SECTORS];
+    bool is_full_dump;
+    uint16_t level;
+    uint32_t xp;
+    uint32_t gold;
+    char nickname[20];
+    uint16_t hero_points;
+    uint16_t hat_id;
+    uint16_t upgrade_path;
+    uint8_t platform_flags;
+    uint32_t heroic_challenges;
 } ScanResult;
 
 typedef void (*SkylanderReaderCallback)(void* context);
@@ -57,4 +77,6 @@ void skylander_reader_start(SkylanderReader* reader, SkylanderReaderCallback cal
 void skylander_reader_stop(SkylanderReader* reader);
 bool skylander_reader_get_detected_info(SkylanderReader* reader, ScanDetectionInfo* info);
 bool skylander_reader_read_sector0(SkylanderReader* reader, ScanResult* result);
+bool skylander_reader_read_all(SkylanderReader* reader, ScanResult* result);
+void skylander_reader_parse_game_data(ScanResult* result);
 bool skylander_reader_build_nfc_device(SkylanderReader* reader, NfcDevice* device);
