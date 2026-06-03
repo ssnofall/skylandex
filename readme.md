@@ -21,6 +21,8 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | 🔧 | HALT state machine [*(requires firmware fix - see below)*](#emulation-status) |
 | 🔧 | Playable Skylander Figure Emulation [*(blocked by HALT - see below)*](#emulation-status) |
 | ❌ | Write back data: edit values of saved Skylanders (xp, gold, nickname & more) |
+| ❌ | Trap Team trap support: Traps use Mifare Ultralight instead of Mifare Classic. |
+| ❌ | Vehicle support verification: SuperChargers vehicles are in the database but worth confirming the read path works the same since vehicles behave slightly differently on portals. |
 
 ## Installation
 
