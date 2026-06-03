@@ -9,7 +9,7 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 |--------|---------|
 | ✔ | Scan and identify Skylander figure |
 | ✔ | Collection index saved to SD card |
-| ✔ | Detail view: name, element, UID, VID, XP, Gold, Hat, & more |
+| ✔ | Detail view: name, element, uid, vid, xp, gold, hat, & more |
 | ✔ | Save NFC dump to SD card per figure |
 | ✔ | LED color themed per element; scan progress indicator (magenta blink during read) |
 | ✔ | Saved figure NFC file emulation |
@@ -17,10 +17,10 @@ A Flipper Zero app for scanning, identifying, indexing, and emulating Skylander 
 | ✔ | Delete saved Skylanders from collection + NFC dump (long press in My Skylandex) |
 | ✔ | On-device key gen: derives all 16 keys from UID |
 | ✔ | Full 16-sector read: use derived keys to dump everything |
-| ✔ | AES-128 app-layer decryption: real XP, Gold, Nickname, Hat, & more |
+| ✔ | AES-128 app-layer decryption: AES-128 key to decrypt the 16-byte block in place. |
 | 🔧 | HALT state machine [*(requires firmware fix - see below)*](#emulation-status) |
-| ❌ | Write back saves: so progress actually saves to the dump |
 | 🔧 | Playable Skylander Figure Emulation [*(blocked by HALT - see below)*](#emulation-status) |
+| ❌ | Write back data: edit values of saved Skylanders (xp, gold, nickname & more) |
 
 ## Installation
 
