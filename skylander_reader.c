@@ -1,4 +1,5 @@
 #include "skylander_reader.h"
+#include "skylander_crypto.h"
 #include "character_db.h"
 #include <furi.h>
 #include <nfc/nfc.h>
@@ -254,7 +255,6 @@ void skylander_reader_parse_game_data(ScanResult* result) {
             if(cp == 0) break;
             if(cp < 128) nick_buf[ni++] = (char)cp;
         }
-        if(ni > 0 && nick_buf[ni - 1] == '\0') break;
     }
     nick_buf[ni] = '\0';
     strlcpy(result->nickname, nick_buf, sizeof(result->nickname));
@@ -350,7 +350,10 @@ bool skylander_reader_read_all(SkylanderReader* reader, ScanResult* result) {
     // copy all blocks back to result
     memcpy(result->all_blocks, all_blocks, sizeof(all_blocks));
 
-    // parse game data (placeholder)
+    // decrypt application-layer AES-128 ECB encrypted blocks
+    skylander_crypto_decrypt_blocks(result->all_blocks, result->all_blocks);
+
+    // parse game data from decrypted blocks
     skylander_reader_parse_game_data(result);
 
     reader->state = SkylanderReaderStateDone;
@@ -378,6 +381,10 @@ bool skylander_reader_build_nfc_device(SkylanderReader* reader, NfcDevice* devic
         mf_classic_free(mf_data);
         return false;
     }
+
+    // Set ATQA and SAK for MIFARE Classic 1K (standard values for Skylanders)
+    iso14443_3a_set_atqa(mf_data->iso14443_3a_data, (const uint8_t[]){0x00, 0x04});
+    iso14443_3a_set_sak(mf_data->iso14443_3a_data, 0x08);
 
     // copy all blocks from the full dump buffer
     for(uint8_t block = 0; block < SKYLANDER_TOTAL_BLOCKS; block++) {
